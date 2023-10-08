@@ -1,3 +1,5 @@
+// user mode standard library
+
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
@@ -145,3 +147,7 @@ memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
 }
+
+// int getreadcount(void) {
+//     return syscall(SYS_getreadcount);
+// }

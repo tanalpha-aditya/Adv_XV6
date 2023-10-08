@@ -37,3 +37,6 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("waitx");
+entry("sigalarm");
+entry("sigreturn");
+entry("getreadcount")

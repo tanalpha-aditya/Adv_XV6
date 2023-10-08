@@ -1,3 +1,5 @@
+//  Declaration of system call wrappers and standard library functions
+
 struct stat;
 
 // system calls
@@ -23,6 +25,9 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int waitx(int*, int* /*wtime*/, int* /*rtime*/);
+int getreadcount(void);
+int sigalarm(int ticks, void (*handler)());
+int sigreturn(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -40,3 +45,4 @@ void free(void*);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
+// int sys_getreadcount(void);

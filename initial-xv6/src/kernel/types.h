@@ -1,3 +1,5 @@
+//  shared user / kernal header and utiliy files 
+
 typedef unsigned int   uint;
 typedef unsigned short ushort;
 typedef unsigned char  uchar;

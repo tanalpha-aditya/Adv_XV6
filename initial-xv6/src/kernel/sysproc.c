@@ -108,3 +108,32 @@ sys_waitx(void)
     return -1;
   return ret;
 }
+
+uint64 sys_getreadcount(void) {
+    return readcount; // Assuming readcount is a global counter variable.
+}
+
+uint64
+sys_sigalarm(void)
+{
+  int ticks;
+  uint64 function;
+  argint(0,&ticks);
+  argaddr(1,&function);
+  myproc()->maxticks = ticks;
+  myproc()->handler = function;
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  memmove(p->trapframe, p->beforehandler, PGSIZE);
+  kfree(p->beforehandler);
+  p->beforehandler = 0;
+  p->sigticks = 0;
+  p->alarm = 0;
+  usertrapret();
+  return 0;
+}

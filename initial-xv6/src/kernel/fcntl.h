@@ -1,3 +1,5 @@
+// shared user / kernal header and utility files
+
 #define O_RDONLY  0x000
 #define O_WRONLY  0x001
 #define O_RDWR    0x002

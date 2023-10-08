@@ -126,7 +126,12 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p->sigticks = 0;
+  p->maxticks = 999999999999;
+  p->stime = 0;
+  p->wtime = 0;
+  p->queue = 0;
+  p->enter_queue = 0;
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
   {
@@ -213,7 +218,8 @@ proc_pagetable(struct proc *p)
   return pagetable;
 }
 
-// Free a process's page table, and free the
+// Free a process's page t  uint ctime;                  // When was the process created
+// able, and free the
 // physical memory it refers to.
 void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
@@ -458,11 +464,12 @@ int wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+#ifdef roundrobin
 void scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
+  printf("rr");
   c->proc = 0;
   for (;;)
   {
@@ -489,7 +496,242 @@ void scheduler(void)
     }
   }
 }
+#endif
 
+#ifdef FCFS
+
+void scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  printf("FCFS");
+
+  for (;;)
+  {
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    struct proc *next_process = 0;
+
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE)
+      {
+        next_process = p;
+        break;
+      }
+    }
+    for (p++; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE && next_process->ctime > p->ctime)
+      {
+        next_process = p;
+        continue;
+      }
+    }
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      if (p != next_process)
+      {
+        release(&p->lock);
+      }
+    }
+    p = next_process;
+    if (next_process != 0)
+    {
+      // printf("%d ", p->pid);
+      // printf("%d\n", p->pid);
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+      release(&p->lock);
+    }
+  }
+}
+
+#endif
+
+#ifdef MLFQ
+void scheduler(void)
+{
+  printf("MLFQ is running\n");
+  struct proc *p;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for (;;)
+  {
+    intr_on();
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      if (p->state == RUNNABLE)
+      {
+        acquire(&p->lock);
+        if (p->queue != 0 && p->wtime >= 32)
+        {
+          p->wtime = 0;
+          p->queue--;
+          p->enter_queue = ticks;
+        }
+        release(&p->lock);
+      }
+    }
+    // Avoid deadlock by ensuring that devices can interrupt.
+    struct proc *selected = 0;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE && p->queue == 0)
+      {
+        if (selected == 0)
+        {
+          selected = p;
+          continue;
+        }
+        if (p->enter_queue < selected->enter_queue)
+        {
+          release(&selected->lock);
+          selected = p;
+          continue;
+        }
+      }
+      release(&p->lock);
+    }
+    if (selected != 0)
+    {
+      // printf("MLFQ is running\n");
+      selected->state = RUNNING;
+      selected->wtime = 0;
+      c->proc = selected;
+      swtch(&c->context, &selected->context);
+      c->proc = 0;
+      release(&selected->lock);
+      continue;
+    }
+    // selected = 0;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE && p->queue == 1)
+      {
+        // p->wtime++;
+        // if(p->wtime==32)
+        // {
+        //   p->queue--;
+        //   p->wtime=0;
+        //   selected = p;
+        //   break;
+        // }
+        if (selected == 0)
+        {
+          selected = p;
+          continue;
+        }
+        if (p->enter_queue < selected->enter_queue)
+        {
+          release(&selected->lock);
+          selected = p;
+          continue;
+        }
+      }
+      release(&p->lock);
+    }
+    if (selected != 0)
+    {
+      selected->state = RUNNING;
+      selected->wtime = 0;
+      c->proc = selected;
+      swtch(&c->context, &selected->context);
+      c->proc = 0;
+      release(&selected->lock);
+      continue;
+    }
+    // selected = 0;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE && p->queue == 2)
+      {
+        // p->wtime++;
+        // if(p->wtime==32)
+        // {
+        //   p->queue--;
+        //   p->wtime=0;
+        //   selected = p;
+        //   break;
+        // }
+        if (selected == 0)
+        {
+          selected = p;
+          continue;
+        }
+        if (p->enter_queue < selected->enter_queue)
+        {
+          release(&selected->lock);
+          selected = p;
+          continue;
+        }
+      }
+      release(&p->lock);
+    }
+    if (selected != 0)
+    {
+      selected->state = RUNNING;
+      selected->wtime = 0;
+      c->proc = selected;
+      swtch(&c->context, &selected->context);
+      c->proc = 0;
+      release(&selected->lock);
+      continue;
+    }
+    // selected = 0;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE && p->queue == 3)
+      {
+        // p->wtime++;
+        // if(p->wtime==32)
+        // {
+        //   p->queue--;
+        //   p->wtime=0;
+        //   selected = p;
+        //   break;
+        // }
+        if (selected == 0)
+        {
+          selected = p;
+          continue;
+        }
+        if (p->enter_queue < selected->enter_queue)
+        {
+          release(&selected->lock);
+          selected = p;
+          continue;
+        }
+      }
+      release(&p->lock);
+    }
+    if (selected != 0)
+    {
+      selected->state = RUNNING;
+      selected->wtime = 0;
+      c->proc = selected;
+      swtch(&c->context, &selected->context);
+      c->proc = 0;
+      release(&selected->lock);
+    }
+    // selected = 0;
+  }
+}
+#endif
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
@@ -699,6 +941,7 @@ void procdump(void)
     else
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
+    printf("rtime is %d\n", p->rtime);
     printf("\n");
   }
 }
@@ -758,16 +1001,24 @@ int waitx(uint64 addr, uint *wtime, uint *rtime)
   }
 }
 
-void update_time()
-{
-  struct proc *p;
-  for (p = proc; p < &proc[NPROC]; p++)
-  {
-    acquire(&p->lock);
-    if (p->state == RUNNING)
-    {
-      p->rtime++;
-    }
-    release(&p->lock);
-  }
-}
+// void update_time()
+// {
+//   struct proc *p;
+//   for (p = proc; p < &proc[NPROC]; p++)
+//   {
+//     acquire(&p->lock);
+//     if (p->state == RUNNING)
+//     {
+//       p->rtime++;
+//     }
+//     else if (p->state == SLEEPING)
+//     {
+//       p->stime++;
+//     }
+//     else if(p->state ==RUNNABLE)
+//     {
+//       p->wtime++;
+//     }
+//     release(&p->lock);
+//   }
+// }

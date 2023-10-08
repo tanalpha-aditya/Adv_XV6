@@ -66,7 +66,24 @@ void usertrap(void)
   }
   else if ((which_dev = devintr()) != 0)
   {
-    // ok
+    if (which_dev == 2 && p->alarm == 0)
+    {
+      // Save trapframe
+      p->alarm = 1;
+      struct trapframe *tf = kalloc();
+      memmove(tf, p->trapframe, PGSIZE);
+      p->beforehandler = tf;
+      p->alarm = 0;
+      p->sigticks++;
+      if (p->sigticks >= p->maxticks)
+      {
+        p->alarm = 1;
+        // uint64 a0;
+        // asm volatile("mv %0, a0" : "=r" (a0) );
+        // printf("a0 is %x in trap\n", a0);
+        p->trapframe->epc = (uint64)p->handler;
+      }
+    }
   }
   else
   {
@@ -78,10 +95,69 @@ void usertrap(void)
   if (killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
+    // give up the CPU if this is a timer interrupt.
+#ifdef roundrobin
   if (which_dev == 2)
     yield();
-
+#endif
+#ifdef MLFQ
+  if (which_dev == 2)
+  {
+    struct proc *p = myproc();
+    int queue = p->queue;
+    switch (queue)
+    {
+    case 0:
+      p->slice = 0;
+      p->queue++;
+      p->enter_queue = ticks;
+      yield();
+      break;
+    case 1:
+      if (p->slice != 2)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    case 2:
+      if (p->slice != 8)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    case 3:
+      if (p->slice != 14)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    }
+  }
+#endif
   usertrapret();
 }
 
@@ -150,10 +226,69 @@ void kerneltrap()
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
   }
-
+#ifdef roundrobin
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
+#endif
+#ifdef MLFQ
+  if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  {
+    struct proc *p = myproc();
+    int queue = p->queue;
+    switch (queue)
+    {
+    case 0:
+      p->slice = 0;
+      p->queue++;
+      p->enter_queue = ticks;
+      yield();
+      break;
+    case 1:
+      if (p->slice != 2)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    case 2:
+      if (p->slice != 8)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    case 3:
+      if (p->slice != 14)
+      {
+        p->slice++;
+        break;
+      }
+      else
+      {
+        p->slice = 0;
+        p->queue++;
+        p->enter_queue = ticks;
+        yield();
+        break;
+      }
+    }
+  }
+#endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -165,7 +300,7 @@ void clockintr()
 {
   acquire(&tickslock);
   ticks++;
-  update_time();
+  // update_time();
   // for (struct proc *p = proc; p < &proc[NPROC]; p++)
   // {
   //   acquire(&p->lock);
@@ -180,6 +315,24 @@ void clockintr()
   //   // }
   //   release(&p->lock);
   // }
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if (p->state == RUNNING)
+    {
+      p->rtime++;
+    }
+    else if (p->state == SLEEPING)
+    {
+      p->stime++;
+    }
+    else if (p->state == RUNNABLE)
+    {
+      p->wtime++;
+    }
+    release(&p->lock);
+  }
   wakeup(&ticks);
   release(&tickslock);
 }
